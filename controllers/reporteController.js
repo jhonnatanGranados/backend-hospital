@@ -8,7 +8,6 @@ const reporteController = {
       const primerDiaMes = new Date(fechaActual.getFullYear(), fechaActual.getMonth(), 1);
       const ultimoDiaMes = new Date(fechaActual.getFullYear(), fechaActual.getMonth() + 1, 0);
 
-      // Obtener TODOS los pacientes
       const todosLosPacientes = await Paciente.findAll({
         raw: true
       });
@@ -22,6 +21,7 @@ const reporteController = {
       let ingresosMesActual = 0;
       let sumaCostosEgresados = 0;
       let contadorEgresados = 0;
+      let contadorFallecidos = 0;
 
       let distribucionCostosEgresados = {
         total_sanatorio: 0,
@@ -49,12 +49,22 @@ const reporteController = {
         
         if (esFallecido) {
           fallecidos++;
+          contadorFallecidos++;
+          ingresosTotales += costo;
+          
+          distribucionCostosEgresados.total_sanatorio += parseFloat(paciente.sanatorio) || 0;
+          distribucionCostosEgresados.total_honorarios += parseFloat(paciente.honorarios) || 0;
+          distribucionCostosEgresados.total_anestesia += parseFloat(paciente.anestesia) || 0;
+          distribucionCostosEgresados.total_otros += parseFloat(paciente.otros) || 0;
+          distribucionCostosEgresados.total_usg += parseFloat(paciente.usg) || 0;
+          distribucionCostosEgresados.total_lab += parseFloat(paciente.lab) || 0;
+          distribucionCostosEgresados.total_ekg += parseFloat(paciente.ekg) || 0;
+          distribucionCostosEgresados.total_rx += parseFloat(paciente.rx) || 0;
         } 
         else if (!esActivo || tieneFechaEgreso) {
           egresados++;
-          ingresosTotales += costo;
-          sumaCostosEgresados += costo;
           contadorEgresados++;
+          ingresosTotales += costo;
           
           if (paciente.fecha_egreso) {
             const fechaEgreso = new Date(paciente.fecha_egreso);
@@ -77,9 +87,9 @@ const reporteController = {
         }
       });
 
-      const costoPromedio = contadorEgresados > 0 ? sumaCostosEgresados / contadorEgresados : 0;
+      const totalNoActivos = contadorEgresados + contadorFallecidos;
+      const costoPromedio = totalNoActivos > 0 ? ingresosTotales / totalNoActivos : 0;
 
-      // Pacientes por mes
       const seisMesesAtras = new Date(fechaActual.getFullYear(), fechaActual.getMonth() - 5, 1);
       
       const pacientesPorMes = await Paciente.findAll({
@@ -143,6 +153,15 @@ const reporteController = {
         ultimos_pacientes: ultimosPacientesFormateados
       };
 
+      // ✅ LÍNEA CORREGIDA - usa ingresosTotales en lugar de ingresos_totales
+      console.log('📊 ESTADÍSTICAS CALCULADAS:', {
+        total_pacientes: estadisticas.general.total_pacientes,
+        egresados,
+        fallecidos,
+        ingresos_totales: ingresosTotales,  // ✅ CORREGIDO
+        costo_promedio: costoPromedio       // ✅ CORREGIDO
+      });
+
       res.json(estadisticas);
     } catch (error) {
       console.error('Error al generar estadísticas:', error);
@@ -192,6 +211,7 @@ const reporteController = {
         
         if (esFallecido) {
           fallecidos++;
+          totalIngresos += costo;
         } else if (!esActivo || tieneEgreso) {
           egresados++;
           totalIngresos += costo;
@@ -218,7 +238,6 @@ const reporteController = {
         }))
       };
 
-      // ✅ Usar findOrCreate para evitar duplicados
       if (req.usuario && req.usuario.id) {
         try {
           const [reporteGuardado, created] = await ReporteEstadisticas.findOrCreate({
@@ -237,7 +256,7 @@ const reporteController = {
               pacientes_fallecidos: fallecidos,
               ingresos_totales: totalIngresos,
               ingresos_mes_actual: 0,
-              costo_promedio: egresados > 0 ? totalIngresos / egresados : 0,
+              costo_promedio: (egresados + fallecidos) > 0 ? totalIngresos / (egresados + fallecidos) : 0,
               datos_detallados: reporte,
               generado_por: req.usuario.id
             }
